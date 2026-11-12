@@ -39,6 +39,7 @@ FORMATS = {  # name -> (encrypted extension, plain extension, mime)
     "webp": (".webp.enc", ".webp", "image/webp"),
 }
 ENV_PASSWORD = "ENCPNG_PASSWORD"
+DEFAULT_PASSWORD = "147258"  # default value of the node password widget
 
 
 class DecryptError(Exception):

@@ -1,7 +1,7 @@
 [project]
 name = "comfyui-encryptedpng"
 description = "Save images as AES-256-GCM encrypted PNG/JPEG/WebP images and load/preview/decrypt them in ComfyUI, plus a standalone local decrypt script."
-version = "1.1.0"
+version = "1.1.1"
 license = { file = "LICENSE" }
 dependencies = ["cryptography>=41"]
 

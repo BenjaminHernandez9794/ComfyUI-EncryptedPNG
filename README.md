@@ -22,6 +22,7 @@ pip install -r ComfyUI-EncryptedPNG/requirements.txt   # 仅 cryptography
 
 ## 密码
 
+- 两个节点的 `password` 默认值为 **`147258`**，开箱即用；正式使用建议改成自己的密码（默认值是公开的）。
 - 节点 `password` 留空时，读取环境变量 **`ENCPNG_PASSWORD`**（推荐，避免密码写进工作流 JSON）。
 - 填在节点里的密码会随工作流保存/分享，请注意。界面上密码会以 `•` 遮挡显示。
 
@@ -35,7 +36,7 @@ python decrypt_local.py image.jpg.enc                    # 生成同目录 image
 python decrypt_local.py ComfyUI/output/encrypted -o ./plain   # 递归解密整个文件夹，保留子目录
 ENCPNG_PASSWORD=xxx python decrypt_local.py a.png.enc b.png.enc -f   # -f 覆盖已存在文件
 ```
-未提供 `-p` 或环境变量时会提示输入密码。解密出的 PNG / WebP 若嵌入了工作流，可直接拖回 ComfyUI 还原（JPEG 的 EXIF 工作流 ComfyUI 前端不一定识别，可用节点的 metadata 输出查看）。
+未提供 `-p` 或环境变量时会提示输入密码，直接回车即用默认密码 `147258`。解密出的 PNG / WebP 若嵌入了工作流，可直接拖回 ComfyUI 还原（JPEG 的 EXIF 工作流 ComfyUI 前端不一定识别，可用节点的 metadata 输出查看）。
 
 ## 文件格式
 

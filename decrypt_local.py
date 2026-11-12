@@ -11,7 +11,8 @@ Usage:
     python decrypt_local.py a.png.enc b.png.enc -p secret
     ENCPNG_PASSWORD=secret python decrypt_local.py ./output
 
-If no password is given (-p or ENCPNG_PASSWORD), you are prompted for it.
+If no password is given (-p or ENCPNG_PASSWORD), you are prompted for it;
+pressing Enter uses the nodes' default password 147258.
 """
 
 import argparse
@@ -30,6 +31,7 @@ except ImportError:
 MAGIC = b"ENCPNG"
 HEADER_FMT = ">6sBBI16s12s"
 HEADER_LEN = struct.calcsize(HEADER_FMT)  # 40
+DEFAULT_PASSWORD = "147258"  # same default as the ComfyUI nodes
 ENC_EXTS = (".png.enc", ".jpg.enc", ".jpeg.enc", ".webp.enc")
 
 
@@ -89,7 +91,8 @@ def main():
     ap.add_argument("-f", "--force", action="store_true", help="overwrite existing output files")
     a = ap.parse_args()
 
-    pw = a.password or os.environ.get("ENCPNG_PASSWORD") or getpass.getpass("Password: ")
+    pw = a.password or os.environ.get("ENCPNG_PASSWORD") or getpass.getpass(
+        f"Password (Enter = default {DEFAULT_PASSWORD}): ") or DEFAULT_PASSWORD
     ok = fail = 0
     for src, base in collect(a.inputs):
         try:

@@ -12,6 +12,7 @@ import folder_paths
 
 from .encpng_core import (
     DEFAULT_ITERATIONS,
+    DEFAULT_PASSWORD,
     FORMATS,
     DecryptError,
     decrypt_bytes,
@@ -126,8 +127,8 @@ class EncryptedPNGSave:
         return {
             "required": {
                 "images": ("IMAGE",),
-                "password": ("STRING", {"default": "", "multiline": False,
-                                         "tooltip": "Empty = use the ENCPNG_PASSWORD environment variable"}),
+                "password": ("STRING", {"default": DEFAULT_PASSWORD, "multiline": False,
+                                         "tooltip": f"Default {DEFAULT_PASSWORD}. Empty = use the ENCPNG_PASSWORD environment variable"}),
                 "filename_prefix": ("STRING", {"default": "encrypted/ComfyUI"}),
                 "format": (list(FORMATS.keys()), {"default": "png"}),
                 "quality": ("INT", {"default": 95, "min": 1, "max": 100, "step": 1,
@@ -217,8 +218,8 @@ class EncryptedPNGLoad:
         return {
             "required": {
                 "file": (files if files else ["(no encrypted files found)"],),
-                "password": ("STRING", {"default": "", "multiline": False,
-                                         "tooltip": "Empty = use the ENCPNG_PASSWORD environment variable"}),
+                "password": ("STRING", {"default": DEFAULT_PASSWORD, "multiline": False,
+                                         "tooltip": f"Default {DEFAULT_PASSWORD}. Empty = use the ENCPNG_PASSWORD environment variable"}),
             }
         }
 
