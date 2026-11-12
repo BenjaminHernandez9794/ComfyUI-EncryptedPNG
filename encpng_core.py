@@ -31,7 +31,13 @@ SALT_LEN = 16
 NONCE_LEN = 12
 HEADER_FMT = ">6sBBI16s12s"
 HEADER_LEN = struct.calcsize(HEADER_FMT)  # 40
-ENC_EXT = ".png.enc"
+ENC_EXT = ".png.enc"  # legacy default
+ENC_EXTS = (".png.enc", ".jpg.enc", ".jpeg.enc", ".webp.enc")
+FORMATS = {  # name -> (encrypted extension, plain extension, mime)
+    "png": (".png.enc", ".png", "image/png"),
+    "jpeg": (".jpg.enc", ".jpg", "image/jpeg"),
+    "webp": (".webp.enc", ".webp", "image/webp"),
+}
 ENV_PASSWORD = "ENCPNG_PASSWORD"
 
 
@@ -78,6 +84,21 @@ def decrypt_bytes(blob, password):
         return AESGCM(key).decrypt(nonce, blob[HEADER_LEN:], blob[:HEADER_LEN])
     except InvalidTag:
         raise DecryptError("Decryption failed: wrong password or the file is corrupted.")
+
+
+def detect_format(data):
+    """Detect the real image format of decrypted bytes: 'png', 'jpeg', 'webp' or None."""
+    if data[:8] == b"\x89PNG\r\n\x1a\n":
+        return "png"
+    if data[:3] == b"\xff\xd8\xff":
+        return "jpeg"
+    if data[:4] == b"RIFF" and data[8:12] == b"WEBP":
+        return "webp"
+    return None
+
+
+def is_enc_name(name):
+    return name.lower().endswith(ENC_EXTS)
 
 
 def encrypt_file(src, dst, password, iterations=DEFAULT_ITERATIONS):

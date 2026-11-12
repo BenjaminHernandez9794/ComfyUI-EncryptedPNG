@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """
-Standalone local decryptor for ComfyUI-EncryptedPNG files (*.png.enc).
+Standalone local decryptor for ComfyUI-EncryptedPNG files (*.png.enc / *.jpg.enc / *.webp.enc).
+The real image format is detected from the decrypted bytes.
 
 Only needs:  pip install cryptography
 
@@ -29,7 +30,17 @@ except ImportError:
 MAGIC = b"ENCPNG"
 HEADER_FMT = ">6sBBI16s12s"
 HEADER_LEN = struct.calcsize(HEADER_FMT)  # 40
-ENC_EXT = ".png.enc"
+ENC_EXTS = (".png.enc", ".jpg.enc", ".jpeg.enc", ".webp.enc")
+
+
+def detect_ext(data):
+    if data[:8] == b"\x89PNG\r\n\x1a\n":
+        return ".png"
+    if data[:3] == b"\xff\xd8\xff":
+        return ".jpg"
+    if data[:4] == b"RIFF" and data[8:12] == b"WEBP":
+        return ".webp"
+    return ".bin"
 
 
 def decrypt_bytes(blob, password):
@@ -50,15 +61,20 @@ def collect(paths):
         if os.path.isdir(p):
             for root, _d, files in os.walk(p):
                 for fn in sorted(files):
-                    if fn.lower().endswith(ENC_EXT):
+                    if fn.lower().endswith(ENC_EXTS):
                         yield os.path.join(root, fn), p
         else:
             yield p, None
 
 
-def out_path(src, base, out_dir):
+def out_path(src, base, out_dir, ext):
     name = os.path.basename(src)
-    name = name[: -len(ENC_EXT)] + ".png" if name.lower().endswith(ENC_EXT) else name + ".png"
+    if name.lower().endswith(".enc"):
+        name = name[:-4]
+    stem, old = os.path.splitext(name)
+    if old.lower() in (".png", ".jpg", ".jpeg", ".webp"):
+        name = stem
+    name += ext
     if not out_dir:
         return os.path.join(os.path.dirname(src), name)
     rel_dir = os.path.relpath(os.path.dirname(src), base) if base else ""
@@ -66,23 +82,23 @@ def out_path(src, base, out_dir):
 
 
 def main():
-    ap = argparse.ArgumentParser(description="Decrypt ComfyUI-EncryptedPNG *.png.enc files.")
+    ap = argparse.ArgumentParser(description="Decrypt ComfyUI-EncryptedPNG *.png.enc / *.jpg.enc / *.webp.enc files.")
     ap.add_argument("inputs", nargs="+", help="files or folders")
     ap.add_argument("-p", "--password", help="password (default: $ENCPNG_PASSWORD or prompt)")
     ap.add_argument("-o", "--out", help="output folder (default: next to each input)")
-    ap.add_argument("-f", "--force", action="store_true", help="overwrite existing .png files")
+    ap.add_argument("-f", "--force", action="store_true", help="overwrite existing output files")
     a = ap.parse_args()
 
     pw = a.password or os.environ.get("ENCPNG_PASSWORD") or getpass.getpass("Password: ")
     ok = fail = 0
     for src, base in collect(a.inputs):
-        dst = out_path(src, base, a.out)
         try:
+            with open(src, "rb") as f:
+                png = decrypt_bytes(f.read(), pw)
+            dst = out_path(src, base, a.out, detect_ext(png))
             if os.path.exists(dst) and not a.force:
                 print(f"skip (exists): {dst}")
                 continue
-            with open(src, "rb") as f:
-                png = decrypt_bytes(f.read(), pw)
             os.makedirs(os.path.dirname(dst) or ".", exist_ok=True)
             with open(dst, "wb") as f:
                 f.write(png)

@@ -7,7 +7,7 @@ try:
     from aiohttp import web
     from server import PromptServer
 
-    from .encpng_core import DecryptError
+    from .encpng_core import FORMATS, DecryptError, detect_format
     from .nodes import decrypt_named_file, list_encrypted_files
 
     routes = PromptServer.instance.routes
@@ -25,7 +25,8 @@ try:
             return web.json_response({"error": str(e)}, status=403)
         except Exception as e:
             return web.json_response({"error": str(e)}, status=400)
-        return web.Response(body=png, content_type="image/png",
+        mime = FORMATS.get(detect_format(png) or "png")[2]
+        return web.Response(body=png, content_type=mime,
                             headers={"Cache-Control": "no-store"})
 except Exception as e:  # pragma: no cover
     print(f"[ComfyUI-EncryptedPNG] preview routes not registered: {e}")

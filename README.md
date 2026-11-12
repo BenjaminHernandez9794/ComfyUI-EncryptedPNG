@@ -1,13 +1,13 @@
 # ComfyUI-EncryptedPNG
 
-在 ComfyUI 中把生成的图片以 **AES-256-GCM** 加密保存（`*.png.enc`），并在节点里下拉选择、解密、预览；附带一个独立的本地解密脚本。
+在 ComfyUI 中把生成的图片以 **AES-256-GCM** 加密保存为 PNG / JPEG / WebP（`*.png.enc` / `*.jpg.enc` / `*.webp.enc`），并在节点里下拉选择、解密、预览；附带一个独立的本地解密脚本。
 
 ## 节点
 
 | 节点 | 说明 |
 |---|---|
-| **Save Encrypted PNG (AES-GCM)** | 输入 `IMAGE`，加密后写入 `output/<filename_prefix>_00001_.png.enc`。可选把 prompt/workflow 元数据一起嵌入（在加密内容里）。可选在节点上显示预览（明文预览只写到 ComfyUI 的 `temp/`，重启即清空）。 |
-| **Load Encrypted PNG (AES-GCM)** | 下拉列出 `output/` 和 `input/` 下所有 `*.png.enc`（新的在前）。切换文件或点 **👁 preview** 即在节点内解密预览；**🔄 refresh file list** 无需重启刷新列表。输出 `image` / `mask` / `metadata`（PNG 文本块的 JSON）。 |
+| **Save Encrypted Image (AES-GCM)** | 输入 `IMAGE`，`format` 选 png / jpeg / webp，`quality` 控制 JPEG/WebP 质量（WebP 设 100 为无损），加密后写入 `output/<filename_prefix>_00001_.<ext>.enc`。可选把 prompt/workflow 元数据一起嵌入（PNG 用文本块，JPEG/WebP 用 EXIF，都在密文里）。可选在节点上显示预览（明文预览只写到 ComfyUI 的 `temp/`，重启即清空）。 |
+| **Load Encrypted Image (AES-GCM)** | 下拉列出 `output/` 和 `input/` 下所有加密图片（新的在前），解密后按文件头自动识别真实格式。切换文件或点 **👁 preview** 即在节点内解密预览；**🔄 refresh file list** 无需重启刷新列表。输出 `image` / `mask` / `metadata`（嵌入元数据的 JSON）。 |
 
 分类：`image/encryption`
 
@@ -31,11 +31,11 @@ pip install -r ComfyUI-EncryptedPNG/requirements.txt   # 仅 cryptography
 
 ```bash
 pip install cryptography
-python decrypt_local.py image.png.enc                    # 生成同目录 image.png
+python decrypt_local.py image.jpg.enc                    # 生成同目录 image.jpg（按真实格式定扩展名）
 python decrypt_local.py ComfyUI/output/encrypted -o ./plain   # 递归解密整个文件夹，保留子目录
 ENCPNG_PASSWORD=xxx python decrypt_local.py a.png.enc b.png.enc -f   # -f 覆盖已存在文件
 ```
-未提供 `-p` 或环境变量时会提示输入密码。解密出的 PNG 若嵌入了工作流，可直接拖回 ComfyUI 还原。
+未提供 `-p` 或环境变量时会提示输入密码。解密出的 PNG / WebP 若嵌入了工作流，可直接拖回 ComfyUI 还原（JPEG 的 EXIF 工作流 ComfyUI 前端不一定识别，可用节点的 metadata 输出查看）。
 
 ## 文件格式
 
@@ -48,6 +48,7 @@ ENCPNG_PASSWORD=xxx python decrypt_local.py a.png.enc b.png.enc -f   # -f 覆盖
 28  12  nonce
 40  ..  ciphertext || 16 字节 GCM tag
 ```
+密文内是原样的 PNG / JPEG / WebP 字节，格式由文件头识别；旧版 `.png.enc` 文件完全兼容。
 32 字节密钥由 PBKDF2 派生；每个文件随机 salt + nonce；40 字节头部作为 AAD 参与认证，任何篡改或密码错误都会解密失败。
 
 ## 说明

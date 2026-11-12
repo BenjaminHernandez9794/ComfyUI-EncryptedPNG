@@ -12,10 +12,12 @@ import folder_paths
 
 from .encpng_core import (
     DEFAULT_ITERATIONS,
-    ENC_EXT,
+    FORMATS,
     DecryptError,
     decrypt_bytes,
+    detect_format,
     encrypt_bytes,
+    is_enc_name,
     resolve_password,
 )
 
@@ -35,14 +37,14 @@ def _scan(root, tag):
         return out
     for dirpath, _dirs, files in os.walk(root, followlinks=True):
         for fn in files:
-            if fn.lower().endswith(ENC_EXT):
+            if is_enc_name(fn):
                 rel = os.path.relpath(os.path.join(dirpath, fn), root).replace("\\", "/")
                 out.append(f"{rel} [{tag}]")
     return out
 
 
 def list_encrypted_files():
-    """All *.png.enc files under ComfyUI's output/ and input/ dirs, newest first."""
+    """All encrypted image files (*.png.enc / *.jpg.enc / *.webp.enc) under ComfyUI's output/ and input/ dirs, newest first."""
     items = _scan(folder_paths.get_output_directory(), "output") + _scan(
         folder_paths.get_input_directory(), "input"
     )
@@ -77,6 +79,23 @@ def decrypt_named_file(name, password):
         return decrypt_bytes(f.read(), resolve_password(password))
 
 
+def _read_metadata(img):
+    """PNG text chunks, or ComfyUI-style EXIF tags (Workflow:/Prompt:) for JPEG/WebP."""
+    meta = {k: v for k, v in img.info.items() if isinstance(v, str)}
+    try:
+        exif = img.getexif()
+        for tag in (0x010E, 0x010F, 0x9286):
+            v = exif.get(tag)
+            if isinstance(v, bytes):
+                v = v.decode("utf-8", "ignore")
+            if isinstance(v, str) and ":" in v:
+                k, val = v.split(":", 1)
+                meta.setdefault(k.strip().lower(), val)
+    except Exception:
+        pass
+    return meta
+
+
 def _pil_to_tensors(img):
     img = ImageOps.exif_transpose(img)
     if img.mode == "I":
@@ -96,7 +115,7 @@ def _pil_to_tensors(img):
 # ----------------------------------------------------------------------------
 
 class EncryptedPNGSave:
-    """Save images as AES-256-GCM encrypted PNG files (*.png.enc)."""
+    """Save images AES-256-GCM encrypted as PNG / JPEG / WebP (*.png.enc, *.jpg.enc, *.webp.enc)."""
 
     def __init__(self):
         self.output_dir = folder_paths.get_output_directory()
@@ -110,6 +129,9 @@ class EncryptedPNGSave:
                 "password": ("STRING", {"default": "", "multiline": False,
                                          "tooltip": "Empty = use the ENCPNG_PASSWORD environment variable"}),
                 "filename_prefix": ("STRING", {"default": "encrypted/ComfyUI"}),
+                "format": (list(FORMATS.keys()), {"default": "png"}),
+                "quality": ("INT", {"default": 95, "min": 1, "max": 100, "step": 1,
+                                    "tooltip": "JPEG / WebP quality (ignored for PNG). 100 + webp = lossless"}),
                 "embed_workflow": ("BOOLEAN", {"default": True,
                                                "tooltip": "Store prompt/workflow inside the (encrypted) PNG"}),
                 "show_preview": ("BOOLEAN", {"default": True,
@@ -123,8 +145,11 @@ class EncryptedPNGSave:
     OUTPUT_NODE = True
     CATEGORY = "image/encryption"
 
-    def save(self, images, password, filename_prefix="encrypted/ComfyUI", embed_workflow=True,
-             show_preview=True, prompt=None, extra_pnginfo=None):
+    def save(self, images, password, filename_prefix="encrypted/ComfyUI", format="png", quality=95,
+             embed_workflow=True, show_preview=True, prompt=None, extra_pnginfo=None):
+        if format not in FORMATS:
+            format = "png"
+        enc_ext, plain_ext, _mime = FORMATS[format]
         pw = resolve_password(password)
         full_output_folder, filename, counter, subfolder, filename_prefix = folder_paths.get_save_image_path(
             filename_prefix, self.output_dir, images[0].shape[1], images[0].shape[0]
@@ -135,28 +160,41 @@ class EncryptedPNGSave:
             arr = np.clip(255.0 * image.cpu().numpy(), 0, 255).astype(np.uint8)
             img = Image.fromarray(arr)
 
-            meta = None
-            if embed_workflow and not disable_meta:
-                meta = PngInfo()
-                if prompt is not None:
-                    meta.add_text("prompt", json.dumps(prompt))
-                if extra_pnginfo is not None:
-                    for k, v in extra_pnginfo.items():
-                        meta.add_text(k, json.dumps(v))
-
+            want_meta = embed_workflow and not disable_meta
             buf = io.BytesIO()
-            img.save(buf, format="PNG", pnginfo=meta, compress_level=4)
-            png_bytes = buf.getvalue()
+            if format == "png":
+                meta = None
+                if want_meta:
+                    meta = PngInfo()
+                    if prompt is not None:
+                        meta.add_text("prompt", json.dumps(prompt))
+                    if extra_pnginfo is not None:
+                        for k, v in extra_pnginfo.items():
+                            meta.add_text(k, json.dumps(v))
+                img.save(buf, format="PNG", pnginfo=meta, compress_level=4)
+            else:
+                exif = Image.Exif()
+                if want_meta:
+                    # same tags ComfyUI uses for animated WebP: 0x010E workflow, 0x010F prompt
+                    if extra_pnginfo is not None and "workflow" in extra_pnginfo:
+                        exif[0x010E] = "workflow:" + json.dumps(extra_pnginfo["workflow"])
+                    if prompt is not None:
+                        exif[0x010F] = "prompt:" + json.dumps(prompt)
+                if format == "jpeg":
+                    img.convert("RGB").save(buf, format="JPEG", quality=quality, exif=exif, optimize=True)
+                else:
+                    img.save(buf, format="WEBP", quality=quality, lossless=(quality >= 100), exif=exif, method=4)
+            img_bytes = buf.getvalue()
 
             name = filename.replace("%batch_num%", str(batch_number))
-            file = f"{name}_{counter:05}_{ENC_EXT}"
+            file = f"{name}_{counter:05}_{enc_ext}"
             with open(os.path.join(full_output_folder, file), "wb") as f:
-                f.write(encrypt_bytes(png_bytes, pw, DEFAULT_ITERATIONS))
+                f.write(encrypt_bytes(img_bytes, pw, DEFAULT_ITERATIONS))
 
             if show_preview:
-                pfile = f"encpng_preview_{name.replace('/', '_')}_{counter:05}_.png"
+                pfile = f"encpng_preview_{name.replace('/', '_')}_{counter:05}_{plain_ext}"
                 with open(os.path.join(self.temp_dir, pfile), "wb") as f:
-                    f.write(png_bytes)
+                    f.write(img_bytes)
                 previews.append({"filename": pfile, "subfolder": "", "type": "temp"})
             counter += 1
 
@@ -168,7 +206,7 @@ class EncryptedPNGSave:
 # ----------------------------------------------------------------------------
 
 class EncryptedPNGLoad:
-    """Pick a *.png.enc file from a dropdown, decrypt it, preview and output it."""
+    """Pick an encrypted image file from a dropdown, decrypt it, preview and output it."""
 
     def __init__(self):
         self.temp_dir = folder_paths.get_temp_directory()
@@ -178,7 +216,7 @@ class EncryptedPNGLoad:
         files = list_encrypted_files()
         return {
             "required": {
-                "file": (files if files else ["(no .png.enc files found)"],),
+                "file": (files if files else ["(no encrypted files found)"],),
                 "password": ("STRING", {"default": "", "multiline": False,
                                          "tooltip": "Empty = use the ENCPNG_PASSWORD environment variable"}),
             }
@@ -196,13 +234,14 @@ class EncryptedPNGLoad:
         except DecryptError as e:
             raise RuntimeError(str(e))
 
+        fmt = detect_format(png_bytes) or "png"
         img = Image.open(io.BytesIO(png_bytes))
         img.load()
-        metadata = json.dumps({k: v for k, v in img.info.items() if isinstance(v, str)}, ensure_ascii=False)
+        metadata = json.dumps(_read_metadata(img), ensure_ascii=False)
         image, mask = _pil_to_tensors(img)
 
         digest = hashlib.sha1(file.encode("utf-8")).hexdigest()[:12]
-        pfile = f"encpng_decrypted_{digest}.png"
+        pfile = f"encpng_decrypted_{digest}{FORMATS[fmt][1]}"
         with open(os.path.join(self.temp_dir, pfile), "wb") as f:
             f.write(png_bytes)
 
@@ -234,6 +273,6 @@ NODE_CLASS_MAPPINGS = {
 }
 
 NODE_DISPLAY_NAME_MAPPINGS = {
-    "EncryptedPNGSave": "Save Encrypted PNG (AES-GCM)",
-    "EncryptedPNGLoad": "Load Encrypted PNG (AES-GCM)",
+    "EncryptedPNGSave": "Save Encrypted Image (AES-GCM)",
+    "EncryptedPNGLoad": "Load Encrypted Image (AES-GCM)",
 }

@@ -1,7 +1,7 @@
 import { app } from "../../scripts/app.js";
 import { api } from "../../scripts/api.js";
 
-// Front-end for "Load Encrypted PNG (AES-GCM)":
+// Front-end for "Load Encrypted Image (AES-GCM)":
 //  - 🔄 button refreshes the file dropdown without restarting ComfyUI
 //  - 👁 button (and changing the file) decrypts on the server and previews in-node
 //  - the password field is masked on screen
@@ -30,7 +30,7 @@ async function refreshList(node) {
     const fileW = node.widgets.find((w) => w.name === "file");
     const res = await api.fetchApi("/encrypted_png/list");
     const { files } = await res.json();
-    fileW.options.values = files.length ? files : ["(no .png.enc files found)"];
+    fileW.options.values = files.length ? files : ["(no encrypted files found)"];
     if (!fileW.options.values.includes(fileW.value)) fileW.value = fileW.options.values[0];
     app.graph.setDirtyCanvas(true, true);
 }
@@ -47,7 +47,7 @@ async function preview(node, quiet = false) {
     if (!res.ok) {
         let msg = res.statusText;
         try { msg = (await res.json()).error || msg; } catch {}
-        if (!quiet) alert(`Encrypted PNG preview: ${msg}`);
+        if (!quiet) alert(`Encrypted image preview: ${msg}`);
         node.imgs = undefined;
         app.graph.setDirtyCanvas(true, true);
         return;
